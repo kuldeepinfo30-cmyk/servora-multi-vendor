@@ -1,0 +1,49 @@
+version: '3.9'
+
+# Servora local infrastructure: PostgreSQL, Redis and MailHog.
+# Start with:  docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: servora-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: servora
+      POSTGRES_PASSWORD: servora
+      POSTGRES_DB: servora
+    ports:
+      - '5432:5432'
+    volumes:
+      - servora_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U servora -d servora']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: servora-redis
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - servora_redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: servora-mailhog
+    restart: unless-stopped
+    ports:
+      - '1025:1025' # SMTP
+      - '8025:8025' # Web UI
+
+volumes:
+  servora_pgdata:
+  servora_redisdata:
