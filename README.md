@@ -134,6 +134,6 @@ Kuldeep Yadav
 - Email: kuldeepinfo30@gmail.com
 - GitHub: [@kuldeepinfo30-cmyk](https://github.com/kuldeepinfo30-cmyk)
 - LinkedIn: [kuldeep-yadav](https://www.linkedin.com/in/kuldeep-yadav-159146445/)
-- UPI: `kuldeepyada2805@okicici`
+- whatsapp: kulinfo@30
 
 It's a demo build, so please don't reuse or resell it.
