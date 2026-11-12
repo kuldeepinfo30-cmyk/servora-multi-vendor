@@ -126,48 +126,6 @@ Without the webhook secret the endpoint rejects every event, so set it even if y
 
 > Rotate any key that has been pasted into a chat, issue tracker or commit. Test keys are free to rotate.
 
-## Deploying it properly
-
-Two pieces: the static front end and the API. Both are already configured in this repo.
-
-### 1. Front end → Vercel
-
-1. Push the repo to GitHub.
-2. In Vercel: **Add New → Project → Import** the repo. It detects Vite; `vercel.json` sets the build,
-   output directory, SPA rewrites and long-lived asset caching.
-3. Add environment variables:
-   - `VITE_API_URL=https://<your-api-host>` (no trailing slash)
-   - `VITE_RAZORPAY_KEY_ID=rzp_test_...` (or the live key when you go live)
-4. Deploy, then add the Vercel domain to the API's `CORS_ORIGINS`.
-
-`/about`, `/how-it-works`, `/services/...` and every other client route work on refresh because of the SPA
-rewrite in `vercel.json`.
-
-### 2. API → Render (or Railway / Fly.io)
-
-The simplest path is Render, and `render.yaml` is a ready blueprint:
-
-1. In Render: **New → Blueprint**, pick the repo. It creates Postgres, Redis and the API from
-   `server/Dockerfile`.
-2. Fill the values marked `sync: false` in the Render dashboard:
-   - `APP_URL` and `CORS_ORIGINS` → your Vercel URL (e.g. `https://servora.vercel.app`)
-   - `API_URL` → the Render API URL
-   - `COOKIE_DOMAIN` → the API host (e.g. `servora-api.onrender.com`)
-   - the three Razorpay values
-   - `DEMO_PASSWORD`
-3. The container runs `prisma migrate deploy` on boot. Seed once from the Render shell:
-
-   ```bash
-   npx --yes tsx prisma/seed.ts
-   ```
-
-   Seeding **wipes and recreates** demo data, so never run it against data you care about.
-4. Health check: `https://<api-host>/health`. Swagger: `https://<api-host>/docs`.
-
-Railway and Fly.io work the same way: deploy `server/` as a Docker service, attach managed Postgres and
-Redis, then copy the same environment variables. On Fly.io, keep one machine running while migrations
-execute and set the health check to `/health`.
-
 ### Notes that save you a bad afternoon
 
 - `VITE_*` values are baked in at build time. Changing `VITE_API_URL` means redeploying the front end.
