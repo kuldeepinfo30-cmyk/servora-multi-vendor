@@ -16,7 +16,8 @@ rather say that upfront than have someone sign up expecting a cleaner to show up
 So, a few honest notes:
 
 - Payments go through Razorpay in **test mode**. No money moves. If you don't add Razorpay keys, there's a
-  built-in mock gateway so the flow still works.
+  built-in mock gateway so the flow still works. The storefront asks the API to create the order and verify
+  the signature, so the key secret never ships to the browser.
 - The vendors, bookings, reviews and everything else you'll see are seeded demo data.
 - Without SMTP / MSG91 keys, emails and SMS get logged to the console instead of being sent.
 
@@ -30,6 +31,11 @@ Two apps:
 The front end ships with the demo data built in, so it runs on its own with no database and no API. That was
 deliberate: I wanted anyone to clone this and see the whole product in one command. The API in `server/` is
 the real version of the same domain, with the database and the transactions where they belong.
+
+The one exception is payments: the booking flow calls `POST /api/payments/checkout/order` and
+`POST /api/payments/checkout/verify` so Razorpay orders are created and verified on the server. If the API is
+not running, checkout falls back to Razorpay's amount-only mode and the booking is marked "verification
+pending" instead of pretending it was reconciled.
 
 ## Running the front end
 
@@ -82,6 +88,98 @@ Then:
 If your Postgres isn't on 5432, update `DATABASE_URL` in `server/.env`. The `CORS_ORIGINS` value already
 allows the front end on 5173.
 
+## Razorpay, end to end
+
+The flow is the real one — no amount is trusted from the browser in the verified path.
+
+1. `POST /api/payments/checkout/order` on the API creates the Razorpay order with the **key secret**
+   (server-side only) and returns `{ orderId, keyId, amountPaise }`.
+2. The browser opens Razorpay Checkout with that `order_id`.
+3. Razorpay calls back with `razorpay_payment_id`, `razorpay_order_id` and `razorpay_signature`.
+4. `POST /api/payments/checkout/verify` recomputes the HMAC, then reads the order and payment back from
+   Razorpay to confirm the amount, currency and captured status. Only then is the booking shown as
+   "Razorpay verified".
+
+Credentials live in `server/.env`, never in the front end:
+
+```env
+RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxxx
+RAZORPAY_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+RAZORPAY_WEBHOOK_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+RAZORPAY_CURRENCY=INR
+```
+
+The front end only needs the publishable key id:
+
+```env
+VITE_API_URL=http://localhost:4000
+VITE_RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxxx
+```
+
+For webhooks, open **Razorpay Dashboard → Settings → Webhooks** and add:
+
+- URL: `https://<your-api-host>/api/payments/webhook`
+- Secret: the same value as `RAZORPAY_WEBHOOK_SECRET`
+- Events: `payment.captured`, `payment.failed`, `refund.processed`
+
+Without the webhook secret the endpoint rejects every event, so set it even if you only use checkout.
+
+> Rotate any key that has been pasted into a chat, issue tracker or commit. Test keys are free to rotate.
+
+## Deploying it properly
+
+Two pieces: the static front end and the API. Both are already configured in this repo.
+
+### 1. Front end → Vercel
+
+1. Push the repo to GitHub.
+2. In Vercel: **Add New → Project → Import** the repo. It detects Vite; `vercel.json` sets the build,
+   output directory, SPA rewrites and long-lived asset caching.
+3. Add environment variables:
+   - `VITE_API_URL=https://<your-api-host>` (no trailing slash)
+   - `VITE_RAZORPAY_KEY_ID=rzp_test_...` (or the live key when you go live)
+4. Deploy, then add the Vercel domain to the API's `CORS_ORIGINS`.
+
+`/about`, `/how-it-works`, `/services/...` and every other client route work on refresh because of the SPA
+rewrite in `vercel.json`.
+
+### 2. API → Render (or Railway / Fly.io)
+
+The simplest path is Render, and `render.yaml` is a ready blueprint:
+
+1. In Render: **New → Blueprint**, pick the repo. It creates Postgres, Redis and the API from
+   `server/Dockerfile`.
+2. Fill the values marked `sync: false` in the Render dashboard:
+   - `APP_URL` and `CORS_ORIGINS` → your Vercel URL (e.g. `https://servora.vercel.app`)
+   - `API_URL` → the Render API URL
+   - `COOKIE_DOMAIN` → the API host (e.g. `servora-api.onrender.com`)
+   - the three Razorpay values
+   - `DEMO_PASSWORD`
+3. The container runs `prisma migrate deploy` on boot. Seed once from the Render shell:
+
+   ```bash
+   npx --yes tsx prisma/seed.ts
+   ```
+
+   Seeding **wipes and recreates** demo data, so never run it against data you care about.
+4. Health check: `https://<api-host>/health`. Swagger: `https://<api-host>/docs`.
+
+Railway and Fly.io work the same way: deploy `server/` as a Docker service, attach managed Postgres and
+Redis, then copy the same environment variables. On Fly.io, keep one machine running while migrations
+execute and set the health check to `/health`.
+
+### Notes that save you a bad afternoon
+
+- `VITE_*` values are baked in at build time. Changing `VITE_API_URL` means redeploying the front end.
+- Keep `ENABLE_STOREFRONT_CHECKOUT=true` only while the demo creates bookings in local state. Once the
+  storefront posts real bookings to the API, create orders from the booking (`POST /api/payments/orders`)
+  and turn this off so amounts can't be chosen by the browser.
+- Use managed Postgres + Redis. The local `docker-compose.yml` is for development only.
+- Set `COOKIE_SECURE=true` and a `COOKIE_DOMAIN` that matches the API host in production.
+- Free tiers sleep. A cold start makes the first payment request slower; the client times out at 7s and falls
+  back to unverified checkout, so use a paid instance for demos you care about.
+
+
 ## The bits I put the most work into
 
 **Two people can't book the same slot.** A booking is created inside a SERIALIZABLE transaction, and there
@@ -123,9 +221,10 @@ happens when two people submit it at once, or when a refund has to land in the s
 reads from. So the front end is polished on purpose and so is the backend, and the backend is where I spent
 the time on correctness rather than features.
 
-The front end deliberately has no API calls, so the demo stays instant and works offline. If I were shipping
-this for real, wiring the React app to the API would be the next step, replacing the seeded stores with
-fetches and the realtime bits with a socket.
+The front end deliberately uses seeded data so the demo stays instant and works offline. Payments are the
+only server round-trip: order creation and signature verification. If I were shipping this for real, wiring
+the rest of the React app to the API would be the next step, replacing the seeded stores with fetches and
+the realtime bits with a socket.
 
 ## Contact
 
@@ -134,6 +233,6 @@ Kuldeep Yadav
 - Email: kuldeepinfo30@gmail.com
 - GitHub: [@kuldeepinfo30-cmyk](https://github.com/kuldeepinfo30-cmyk)
 - LinkedIn: [kuldeep-yadav](https://www.linkedin.com/in/kuldeep-yadav-159146445/)
-- whatsapp: kulinfo@30
+- UPI: `kuldeepyada2805@okicici`
 
 It's a demo build, so please don't reuse or resell it.

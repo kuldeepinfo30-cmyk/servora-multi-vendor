@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# Signed-in workspaces have nothing useful for search engines.
+Disallow: /admin
+Disallow: /vendor
+Disallow: /customer

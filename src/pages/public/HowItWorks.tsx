@@ -20,8 +20,8 @@ import {
 } from 'lucide-react';
 import { buttonStyles } from '@/components/ui/primitives';
 import { Accordion } from '@/components/ui/overlays';
-import { SectionHeading, SmartImage, TrustStrip } from '@/components/marketplace';
-import { IMAGES } from '@/lib/data';
+import { SectionHeading } from '@/components/marketplace';
+import { usePageMeta } from '@/lib/hooks';
 
 const customerSteps = [
   { icon: Search, title: 'Find a service', desc: 'Search by category or service, compare verified vendors, prices and real reviews.' },
@@ -50,57 +50,84 @@ const journey = [
   { step: '08', customer: 'Service completed & reviewed', system: 'Invoice issued, review unlocked and payout ledger updated.' },
 ];
 
+const heroRail = [
+  { title: 'Tell us what you need', desc: 'Pick a service and a verified professional near you.' },
+  { title: 'Lock a real slot', desc: 'Live availability, held atomically so nobody double-books it.' },
+  { title: 'Pay through Razorpay', desc: 'UPI, card or net banking, held until the job is done.' },
+  { title: 'Track it and review it', desc: 'Follow your pro live, then rate the work when it finishes.' },
+];
+
 export default function HowItWorksPage() {
+  usePageMeta({
+    title: 'How Servora works — booking, payments and vendor payouts',
+    description:
+      'Follow a Servora booking from search to review: live slots, secure Razorpay payments, vendor approval, payouts and refunds.',
+  });
+
   return (
     <div>
-      <section className="relative overflow-hidden border-b border-ink-100 bg-mesh">
-        <div className="container-page py-12 sm:py-16">
-          <div className="grid items-center gap-10 lg:grid-cols-2">
+      <section className="relative overflow-hidden bg-ink-950">
+        <div className="pointer-events-none absolute inset-0 opacity-[0.18] [background-image:radial-gradient(circle_at_12%_18%,#2dd4bf,transparent_45%),radial-gradient(circle_at_88%_8%,#34d399,transparent_40%)]" />
+        <div className="pointer-events-none absolute inset-0 opacity-[0.06] [background-image:linear-gradient(to_right,white_1px,transparent_1px),linear-gradient(to_bottom,white_1px,transparent_1px)] [background-size:46px_46px]" />
+        <div className="container-page relative py-14 sm:py-20">
+          <div className="grid gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
             <div>
-              <p className="eyebrow mb-3">How Servora works</p>
-              <h1 className="max-w-xl font-display text-[34px] font-extrabold leading-[1.08] tracking-tight text-ink-900 sm:text-[44px]">
-                From “I need this fixed” to <span className="gradient-text">done.</span>
-              </h1>
-              <p className="mt-4 max-w-lg text-[13.5px] leading-7 text-ink-600">
-                A marketplace built around real availability, transparent pricing and accountability.
-                Here is exactly what happens from search to review — for customers and vendors.
+              <p className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[10.5px] font-bold uppercase tracking-[0.16em] text-brand-300">
+                <Clock className="h-3.5 w-3.5" /> How Servora works
               </p>
-              <div className="mt-6 flex flex-wrap gap-2.5">
-                <Link to="/services" className={buttonStyles({ size: 'lg' })}>Book a service <ArrowRight className="h-4 w-4" /></Link>
-                <Link to="/register?role=vendor" className={buttonStyles({ variant: 'outline', size: 'lg' })}>Join as a vendor</Link>
+              <h1 className="max-w-xl font-display text-[34px] font-extrabold leading-[1.08] tracking-tight text-white sm:text-[46px]">
+                From “I need this fixed” to <span className="text-brand-400">done.</span>
+              </h1>
+              <p className="mt-4 max-w-lg text-[13.5px] leading-7 text-white/60">
+                Four steps for the customer, four for the vendor, and a scheduling engine underneath that keeps both
+                sides honest. Here is the whole journey — including the parts you never see.
+              </p>
+              <div className="mt-7 flex flex-wrap gap-2.5">
+                <Link to="/services" className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-[13px] font-bold text-ink-900 transition hover:bg-brand-50">
+                  Book a service <ArrowRight className="h-4 w-4" />
+                </Link>
+                <Link to="/register?role=vendor" className="inline-flex items-center gap-2 rounded-xl border border-white/25 px-5 py-3 text-[13px] font-bold text-white transition hover:bg-white/10">
+                  Join as a vendor
+                </Link>
               </div>
             </div>
-            <div className="relative">
-              <SmartImage src={IMAGES.cleaning} alt="Service booking in progress" className="aspect-[4/3] rounded-2xl shadow-float" />
-              <div className="absolute -bottom-4 -left-4 w-52 rounded-xl border border-ink-100 bg-white p-3.5 shadow-float">
-                <p className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-700"><CheckCircle2 className="h-3.5 w-3.5" /> Booking confirmed</p>
-                <p className="mt-1 text-[11px] font-semibold text-ink-800">SRV-24122 · Wed, 10:00 AM</p>
-                <p className="mt-0.5 text-[9.5px] text-ink-400">Ravi Kumar · AC Service</p>
-              </div>
-              <div className="absolute -right-3 top-4 rounded-lg bg-ink-900 px-3 py-2 text-white shadow-float">
-                <p className="text-[9px] text-white/50">Slot held</p>
-                <p className="font-mono text-[12px] font-bold">09:58</p>
-              </div>
-            </div>
+
+            <ol className="relative space-y-3 border-l border-white/15 pl-7">
+              {heroRail.map((item, i) => (
+                <li key={item.title} className="relative rounded-xl border border-white/10 bg-white/[0.04] p-4">
+                  <span className="absolute -left-[37px] top-4 flex h-6 w-6 items-center justify-center rounded-full bg-brand-500 font-display text-[10px] font-extrabold text-white ring-4 ring-ink-950">
+                    {i + 1}
+                  </span>
+                  <p className="text-[12.5px] font-bold text-white">{item.title}</p>
+                  <p className="mt-0.5 text-[11px] leading-5 text-white/50">{item.desc}</p>
+                </li>
+              ))}
+            </ol>
           </div>
-          <TrustStrip className="mt-10" />
         </div>
       </section>
 
       <section className="container-page py-14">
         <SectionHeading eyebrow="For customers" title="Six steps to a job well done" description="No phone tag, no surprise quotes. Everything happens in one place." />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <ol className="mx-auto mt-2 max-w-3xl">
           {customerSteps.map((step, i) => (
-            <div key={step.title} className="relative rounded-2xl border border-ink-200/80 bg-white p-5 transition hover:shadow-card">
-              <div className="flex items-center justify-between">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-50 text-brand-600"><step.icon className="h-5 w-5" /></span>
-                <span className="font-display text-2xl font-extrabold text-ink-100">{String(i + 1).padStart(2, '0')}</span>
+            <li key={step.title} className="flex gap-4 pb-8 last:pb-0">
+              <div className="flex flex-col items-center">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-600 font-display text-[12px] font-extrabold text-white">
+                  {i + 1}
+                </span>
+                {i < customerSteps.length - 1 && <span className="mt-1 w-px flex-1 bg-ink-200" />}
               </div>
-              <h3 className="mt-3 text-[14px] font-bold text-ink-900">{step.title}</h3>
-              <p className="mt-1.5 text-[12px] leading-6 text-ink-500">{step.desc}</p>
-            </div>
+              <div className="flex min-w-0 flex-1 items-start gap-3 pt-1.5">
+                <step.icon className="mt-0.5 hidden h-4 w-4 shrink-0 text-brand-500 sm:block" />
+                <div className="min-w-0">
+                  <h3 className="text-[13.5px] font-bold text-ink-900">{step.title}</h3>
+                  <p className="mt-1 text-[11.5px] leading-5 text-ink-500">{step.desc}</p>
+                </div>
+              </div>
+            </li>
           ))}
-        </div>
+        </ol>
       </section>
 
       <section className="border-y border-ink-100 bg-ink-50/50 py-14">
@@ -208,8 +235,9 @@ export default function HowItWorksPage() {
               <p className="mt-1 text-[12px] text-white/65">Book a verified professional in under a minute.</p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Link to="/services" className="rounded-xl bg-white px-4 py-2.5 text-[12px] font-bold text-brand-800 hover:bg-brand-50">Find a service</Link>
+            <Link to="/about" className="rounded-xl border border-white/30 px-4 py-2.5 text-[12px] font-bold text-white hover:bg-white/10">Our story</Link>
             <Link to="/register?role=vendor" className="rounded-xl border border-white/30 px-4 py-2.5 text-[12px] font-bold text-white hover:bg-white/10">Become a vendor</Link>
           </div>
         </div>

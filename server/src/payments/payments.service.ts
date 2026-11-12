@@ -22,7 +22,7 @@ import { BookingsService } from '../bookings/bookings.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { paginated, PaginationDto, skipTake } from '../common/dto/pagination.dto';
-import { RefundDto, VerifyPaymentDto } from './dto/payment.dto';
+import { RefundDto, StorefrontOrderDto, VerifyPaymentDto } from './dto/payment.dto';
 
 @Injectable()
 export class PaymentsService {
@@ -43,6 +43,124 @@ export class PaymentsService {
       keyId: this.razorpay.publicKey,
       mock: !this.razorpay.configured,
       demoPayEnabled: this.config.get('NODE_ENV') !== 'production',
+      storefrontCheckout: this.storefrontEnabled,
+    };
+  }
+
+  /**
+   * The React demo keeps bookings in local state, so it cannot reference a
+   * booking row when it asks for an order. In development (or when
+   * ENABLE_STOREFRONT_CHECKOUT=true) we allow amount-first orders for that
+   * storefront. The order is still created server-side with the secret and
+   * verified with Razorpay's HMAC signature, so the key secret never reaches
+   * the browser.
+   */
+  private get storefrontEnabled() {
+    return (
+      this.config.get('NODE_ENV') !== 'production' ||
+      this.config.get('ENABLE_STOREFRONT_CHECKOUT') === 'true'
+    );
+  }
+
+  private assertStorefrontEnabled() {
+    if (!this.storefrontEnabled) {
+      throw new ForbiddenException(
+        'Storefront checkout is disabled. Create payments from a booking instead.',
+      );
+    }
+  }
+
+  async createStorefrontOrder(dto: StorefrontOrderDto) {
+    this.assertStorefrontEnabled();
+    const amountPaise = Math.round(dto.amountPaise);
+    if (!Number.isFinite(amountPaise) || amountPaise < 100 || amountPaise > 5_000_000) {
+      throw new BadRequestException('Amount must be between ₹1 and ₹50,000.');
+    }
+
+    const notes = Object.fromEntries(
+      Object.entries(dto.notes ?? {})
+        .slice(0, 12)
+        .map(([key, value]) => [key.slice(0, 40), String(value).slice(0, 200)]),
+    );
+
+    const order = await this.razorpay.createOrder({
+      amountPaise,
+      receipt: dto.receipt,
+      notes: {
+        ...notes,
+        ...(dto.description ? { description: dto.description.slice(0, 120) } : {}),
+      },
+    });
+
+    return {
+      orderId: order.id,
+      keyId: this.razorpay.publicKey,
+      amountPaise: order.amount,
+      currency: order.currency,
+      receipt: dto.receipt,
+      mock: order.mock,
+    };
+  }
+
+  /**
+   * Verifies the checkout signature using the key secret, then cross-checks the
+   * order and payment with Razorpay so a valid signature can't be replayed for
+   * a different amount.
+   */
+  async verifyStorefront(dto: VerifyPaymentDto) {
+    this.assertStorefrontEnabled();
+
+    if (!this.razorpay.configured) {
+      return {
+        verified: true,
+        mock: true,
+        orderId: dto.razorpay_order_id,
+        paymentId: dto.razorpay_payment_id,
+      };
+    }
+
+    const valid = this.razorpay.verifyPaymentSignature(
+      dto.razorpay_order_id,
+      dto.razorpay_payment_id,
+      dto.razorpay_signature,
+    );
+    if (!valid) throw new BadRequestException('Payment signature verification failed.');
+
+    const [order, payment] = await Promise.all([
+      this.razorpay.fetchOrder(dto.razorpay_order_id),
+      this.razorpay.fetchPayment(dto.razorpay_payment_id),
+    ]);
+
+    if (payment && order) {
+      if (payment.order_id !== order.id) {
+        throw new BadRequestException('This payment belongs to a different order.');
+      }
+      if (payment.amount !== order.amount) {
+        throw new BadRequestException('The paid amount does not match the order amount.');
+      }
+      if (!['captured', 'authorized'].includes(payment.status)) {
+        throw new BadRequestException(`Payment is ${payment.status}, not captured.`);
+      }
+    } else {
+      // Signature is valid; Razorpay's read API was briefly unavailable. The
+      // webhook will reconcile the final capture state, so we don't lose the
+      // customer's booking over a transient read failure.
+      this.logger.warn(
+        `Signature verified but reconciliation skipped for ${dto.razorpay_payment_id}.`,
+      );
+    }
+
+    return {
+      verified: true,
+      mock: false,
+      orderId: dto.razorpay_order_id,
+      paymentId: dto.razorpay_payment_id,
+      amountPaise: order?.amount ?? null,
+      currency: order?.currency ?? 'INR',
+      method: payment?.method ?? null,
+      status: payment?.status ?? 'signature_verified',
+      receipt: order?.receipt ?? null,
+      reconciled: Boolean(order && payment),
     };
   }
 

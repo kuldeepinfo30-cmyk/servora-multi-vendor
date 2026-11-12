@@ -409,6 +409,8 @@ export function Avatar({
         <img
           src={src}
           alt={name}
+          loading="lazy"
+          decoding="async"
           className={cn('rounded-full object-cover', sizes[size], ring && 'ring-2 ring-white')}
         />
       ) : (

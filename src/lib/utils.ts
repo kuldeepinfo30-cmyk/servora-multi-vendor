@@ -5,15 +5,27 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export const inr = (value: number, compact = false) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-    notation: compact ? 'compact' : 'standard',
-  }).format(value || 0);
+// Reuse Intl formatters — constructing one per call is surprisingly expensive
+// on list-heavy pages (all services, bookings, transactions).
+const inrFormatter = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  maximumFractionDigits: 0,
+});
 
-export const num = (value: number) => new Intl.NumberFormat('en-IN').format(value || 0);
+const inrCompactFormatter = new Intl.NumberFormat('en-IN', {
+  style: 'currency',
+  currency: 'INR',
+  maximumFractionDigits: 0,
+  notation: 'compact',
+});
+
+const numberFormatter = new Intl.NumberFormat('en-IN');
+
+export const inr = (value: number, compact = false) =>
+  (compact ? inrCompactFormatter : inrFormatter).format(value || 0);
+
+export const num = (value: number) => numberFormatter.format(value || 0);
 
 export const pct = (value: number, digits = 1) => `${value > 0 ? '+' : ''}${value.toFixed(digits)}%`;
 

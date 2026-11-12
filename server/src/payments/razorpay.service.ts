@@ -11,6 +11,16 @@ export interface RazorpayOrder {
   mock: boolean;
 }
 
+export interface RazorpayPayment {
+  id: string;
+  order_id: string | null;
+  amount: number;
+  currency: string;
+  status: string;
+  method?: string;
+  captured?: boolean;
+}
+
 @Injectable()
 export class RazorpayService {
   private readonly logger = new Logger(RazorpayService.name);
@@ -36,6 +46,27 @@ export class RazorpayService {
     return `Basic ${Buffer.from(`${this.keyId}:${this.keySecret}`).toString('base64')}`;
   }
 
+  private async request<T>(path: string, init?: RequestInit): Promise<T | null> {
+    try {
+      const response = await fetch(`https://api.razorpay.com/v1${path}`, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: this.authHeader(),
+          ...(init?.headers ?? {}),
+        },
+      });
+      if (!response.ok) {
+        this.logger.warn(`Razorpay ${init?.method ?? 'GET'} ${path} → ${response.status}`);
+        return null;
+      }
+      return (await response.json()) as T;
+    } catch (error) {
+      this.logger.warn(`Razorpay ${path} unreachable: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
   async createOrder(input: { amountPaise: number; receipt: string; notes?: Record<string, string> }): Promise<RazorpayOrder> {
     if (!this.configured) {
       return {
@@ -48,24 +79,30 @@ export class RazorpayService {
       };
     }
 
-    const response = await fetch('https://api.razorpay.com/v1/orders', {
+    const order = await this.request<RazorpayOrder>('/orders', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: this.authHeader() },
       body: JSON.stringify({
         amount: input.amountPaise,
         currency: this.config.get('RAZORPAY_CURRENCY') ?? 'INR',
-        receipt: input.receipt,
+        receipt: input.receipt.slice(0, 40),
         notes: input.notes ?? {},
         payment_capture: 1,
       }),
     });
-    if (!response.ok) {
-      const body = await response.text();
-      this.logger.error(`Razorpay order failed: ${response.status} ${body}`);
-      throw new Error('Payment gateway is unavailable. Please try again.');
-    }
-    const order = (await response.json()) as RazorpayOrder;
+    if (!order) throw new Error('Payment gateway is unavailable. Please try again.');
     return { ...order, mock: false };
+  }
+
+  /** Reads an order back from Razorpay so we never trust a client-sent amount. */
+  async fetchOrder(orderId: string): Promise<RazorpayOrder | null> {
+    if (!this.configured) return null;
+    return this.request<RazorpayOrder>(`/orders/${encodeURIComponent(orderId)}`);
+  }
+
+  /** Reads a payment back from Razorpay to confirm capture and match the order. */
+  async fetchPayment(paymentId: string): Promise<RazorpayPayment | null> {
+    if (!this.configured) return null;
+    return this.request<RazorpayPayment>(`/payments/${encodeURIComponent(paymentId)}`);
   }
 
   verifyPaymentSignature(orderId: string, paymentId: string, signature: string): boolean {

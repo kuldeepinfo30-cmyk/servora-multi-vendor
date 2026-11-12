@@ -13,7 +13,7 @@ import type { Request } from 'express';
 import { CurrentUser, AuthUser } from '../common/decorators/current-user.decorator';
 import { Public, RawResponse, Roles } from '../common/decorators';
 import { PaymentsService } from './payments.service';
-import { CreateOrderDto, MockPayDto, RefundDto, VerifyPaymentDto } from './dto/payment.dto';
+import { CreateOrderDto, MockPayDto, RefundDto, StorefrontOrderDto, VerifyPaymentDto } from './dto/payment.dto';
 
 @ApiTags('Payments')
 @Controller('payments')
@@ -25,6 +25,22 @@ export class PaymentsController {
   @ApiOperation({ summary: 'Public gateway config (key id, mock mode)' })
   config() {
     return this.payments.configInfo();
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('checkout/order')
+  @ApiOperation({ summary: 'Create a Razorpay order for the demo storefront (amount-first)' })
+  createCheckoutOrder(@Body() dto: StorefrontOrderDto) {
+    return this.payments.createStorefrontOrder(dto);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @Post('checkout/verify')
+  @ApiOperation({ summary: 'Verify a storefront Razorpay signature and reconcile the order' })
+  verifyCheckout(@Body() dto: VerifyPaymentDto) {
+    return this.payments.verifyStorefront(dto);
   }
 
   @ApiBearerAuth('access-token')

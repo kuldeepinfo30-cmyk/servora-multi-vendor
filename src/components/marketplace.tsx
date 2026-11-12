@@ -126,6 +126,7 @@ export function SmartImage({
           src={src}
           alt={alt}
           loading="lazy"
+          decoding="async"
           onError={() => setFailed(true)}
           className={cn('h-full w-full object-cover transition duration-700', imgClassName)}
         />

@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 import { getService, getVendor, getVendorStaff, SERVICES } from '@/lib/data';
 import { cn, fmtDate, inr, iso, minsToLabel, slotAvailability, to12h, bookingRef, uid } from '@/lib/utils';
+import { PaymentCancelled, PaymentVerificationError, RAZORPAY_TEST_MODE, payWithRazorpay, preloadRazorpay } from '@/lib/payments';
+import type { PaymentResult } from '@/lib/payments';
 import { useAuth } from '@/store/auth';
 import { useApp } from '@/store/app';
 import { toast } from '@/store/toast';
@@ -78,8 +80,6 @@ export default function BookingFlowPage() {
   const [newAddress, setNewAddress] = useState({ line1: '', line2: '', city: user?.city ?? 'Mumbai', pincode: '', phone: user?.phone ?? '' });
 
   const [method, setMethod] = useState<'upi' | 'card' | 'wallet' | 'cash'>('upi');
-  const [upiId, setUpiId] = useState('');
-  const [card, setCard] = useState({ number: '', expiry: '', cvv: '', name: user?.name ?? '' });
   const [coupon, setCoupon] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [couponError, setCouponError] = useState('');
@@ -87,6 +87,12 @@ export default function BookingFlowPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState<Booking | null>(null);
+  // Created before payment so Razorpay receives a stable receipt/reference.
+  const [receiptRef] = useState(() => bookingRef());
+
+  useEffect(() => {
+    if (step === 2) preloadRazorpay();
+  }, [step]);
 
   useEffect(() => {
     if (service) {
@@ -147,14 +153,8 @@ export default function BookingFlowPage() {
         errs.address = 'Select a service address.';
       }
     }
-    if (step === 2) {
-      if (method === 'upi' && !/^[\w.-]{2,}@[\w.-]{2,}$/.test(upiId)) errs.upi = 'Enter a valid UPI ID, e.g. name@okhdfcbank.';
-      if (method === 'card') {
-        if (card.number.replace(/\s/g, '').length < 16) errs.cardNumber = 'Enter a 16-digit card number.';
-        if (!/^\d{2}\/\d{2}$/.test(card.expiry)) errs.expiry = 'Use MM/YY format.';
-        if (card.cvv.length < 3) errs.cvv = 'Enter the 3-digit CVV.';
-      }
-      if (!terms) errs.terms = 'Please accept the booking terms.';
+    if (step === 2 && !terms) {
+      errs.terms = 'Please accept the booking terms.';
     }
     setErrors(errs);
     if (Object.keys(errs).length) {
@@ -165,41 +165,84 @@ export default function BookingFlowPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const confirmBooking = () => {
+  const finaliseBooking = (paymentMethod: string, paid: boolean, payment?: PaymentResult) => {
+    const address = useNewAddress
+      ? `${newAddress.line1}${newAddress.line2 ? `, ${newAddress.line2}` : ''}, ${newAddress.city} ${newAddress.pincode}`
+      : selectedAddress
+        ? `${selectedAddress.line1}, ${selectedAddress.line2}, ${selectedAddress.city} ${selectedAddress.pincode}`
+        : 'Mumbai';
+    const booking: Booking = {
+      id: uid('b'),
+      ref: receiptRef,
+      customerId: user?.id ?? 'u1',
+      customerName: user?.name ?? 'Aarav Mehta',
+      vendorId: vendor.id,
+      serviceId: service.id,
+      staffId: staffId || undefined,
+      date,
+      time,
+      duration: service.duration + addOnDetails.reduce((s, a) => s + (a.duration ?? 0), 0),
+      status: paid ? 'confirmed' : 'pending_approval',
+      amount: pricing.total,
+      paymentStatus: paid ? 'paid' : 'pending',
+      paymentMethod,
+      address,
+      notes: [notes, answer].filter(Boolean).join(' · ') || undefined,
+      addOns: addOns.length ? addOns : undefined,
+      createdAt: iso(new Date()),
+      paymentRef: payment?.paymentId,
+      paymentVerified: payment?.verified,
+      gateway: payment ? 'razorpay' : paymentMethod === 'Cash after service' ? 'cash' : undefined,
+    };
+    addBooking(booking);
+    setCompleted(booking);
+    setSubmitting(false);
+    setStep(3);
+    toast.success(
+      payment?.verified
+        ? 'Payment verified · Booking confirmed'
+        : payment
+          ? 'Payment captured · Booking confirmed'
+          : 'Booking confirmed',
+      `${booking.ref} · ${fmtDate(date)} at ${to12h(time)}.`,
+    );
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const confirmBooking = async () => {
+    // Offline methods never touch the gateway.
+    if (method === 'cash' || method === 'wallet') {
+      setSubmitting(true);
+      const label = method === 'cash' ? 'Cash after service' : `Servora wallet · ${inr(pricing.total)}`;
+      window.setTimeout(() => finaliseBooking(label, method === 'wallet'), 700);
+      return;
+    }
+
+    // UPI and cards are collected by Razorpay's hosted checkout.
     setSubmitting(true);
-    window.setTimeout(() => {
-      const address = useNewAddress
-        ? `${newAddress.line1}${newAddress.line2 ? `, ${newAddress.line2}` : ''}, ${newAddress.city} ${newAddress.pincode}`
-        : selectedAddress
-          ? `${selectedAddress.line1}, ${selectedAddress.line2}, ${selectedAddress.city} ${selectedAddress.pincode}`
-          : 'Mumbai';
-      const booking: Booking = {
-        id: uid('b'),
-        ref: bookingRef(),
-        customerId: user?.id ?? 'u1',
-        customerName: user?.name ?? 'Aarav Mehta',
-        vendorId: vendor.id,
-        serviceId: service.id,
-        staffId: staffId || undefined,
-        date,
-        time,
-        duration: service.duration + addOnDetails.reduce((s, a) => s + (a.duration ?? 0), 0),
-        status: method === 'cash' ? 'pending_approval' : 'confirmed',
-        amount: pricing.total,
-        paymentStatus: method === 'cash' ? 'pending' : 'paid',
-        paymentMethod: method === 'upi' ? `UPI · ${upiId}` : method === 'card' ? `Card •••• ${card.number.slice(-4)}` : method === 'wallet' ? 'Servora wallet' : 'Cash after service',
-        address,
-        notes: [notes, answer].filter(Boolean).join(' · ') || undefined,
-        addOns: addOns.length ? addOns : undefined,
-        createdAt: iso(new Date()),
-      };
-      addBooking(booking);
-      setCompleted(booking);
+    try {
+      const payment = await payWithRazorpay({
+        amountPaise: Math.round(pricing.total * 100),
+        receipt: receiptRef,
+        description: `${service.name} · ${vendor.name}`,
+        prefill: { name: user?.name, email: user?.email, contact: user?.phone },
+        notes: { serviceId: service.id, vendorId: vendor.id, date, time },
+      });
+      finaliseBooking(
+        `${method === 'upi' ? 'UPI' : 'Card'} · Razorpay ${payment.paymentId}`,
+        true,
+        payment,
+      );
+    } catch (error) {
       setSubmitting(false);
-      setStep(3);
-      toast.success('Booking confirmed', `${booking.ref} · ${fmtDate(date)} at ${to12h(time)}.`);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }, 1100);
+      if (error instanceof PaymentCancelled) {
+        toast.error('Payment cancelled', 'Your slot is still held — try again whenever you are ready.');
+      } else if (error instanceof PaymentVerificationError) {
+        toast.error('Payment not verified', error.message);
+      } else {
+        toast.error('Payment failed', error instanceof Error ? error.message : 'Please try again.');
+      }
+    }
   };
 
   if (step === 3 && completed) {
@@ -251,6 +294,29 @@ export default function BookingFlowPage() {
                 </div>
               </div>
             </div>
+
+            {completed.paymentRef && (
+              <div
+                className={cn(
+                  'mt-4 flex items-start gap-2 rounded-xl border p-3',
+                  completed.paymentVerified
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : 'border-amber-200 bg-amber-50 text-amber-800',
+                )}
+              >
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[11.5px] font-bold">
+                    {completed.paymentVerified
+                      ? 'Payment verified by Razorpay'
+                      : 'Payment captured — verification pending'}
+                  </p>
+                  <p className="mt-0.5 truncate font-mono text-[10.5px] opacity-80">
+                    {completed.paymentRef}
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
               <Button size="lg" className="flex-1" iconRight={<ArrowRight className="h-4 w-4" />} onClick={() => navigate(`/customer/bookings/${completed.id}`)}>
@@ -533,24 +599,18 @@ export default function BookingFlowPage() {
                   ))}
                 </div>
 
-                {method === 'upi' && (
-                  <div className="mt-3 rounded-xl bg-ink-50/70 p-4">
-                    <Input label="UPI ID" placeholder="yourname@okhdfcbank" value={upiId} onChange={(e) => { setUpiId(e.target.value); setError('upi', ''); }} error={errors.upi} hint="A collect request will be sent to your UPI app." />
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {['@okhdfcbank', '@ybl', '@paytm'].map((suffix) => (
-                        <button key={suffix} type="button" onClick={() => setUpiId((v) => `${v.split('@')[0] || 'aarav'}${suffix}`)} className="rounded-full border border-ink-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-ink-500 hover:border-brand-200 hover:text-brand-700">{suffix}</button>
-                      ))}
+                {(method === 'upi' || method === 'card') && (
+                  <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-sky-200/70 bg-sky-50/60 p-4">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+                    <div className="min-w-0">
+                      <p className="text-[11.5px] font-bold text-sky-900">You’ll pay inside Razorpay’s secure checkout</p>
+                      <p className="mt-0.5 text-[11px] leading-5 text-sky-800">
+                        {method === 'upi'
+                          ? 'Pick UPI — Google Pay, PhonePe, Paytm — or net banking in the Razorpay window that opens next.'
+                          : 'Enter your card in the Razorpay window that opens next. Visa, Mastercard, RuPay and Amex are supported.'}
+                        {RAZORPAY_TEST_MODE && ' This build is on test keys, so no real money moves.'}
+                      </p>
                     </div>
-                  </div>
-                )}
-
-                {method === 'card' && (
-                  <div className="mt-3 grid gap-3 rounded-xl bg-ink-50/70 p-4 sm:grid-cols-2">
-                    <Input containerClassName="sm:col-span-2" label="Card number" placeholder="4242 4242 4242 4242" value={card.number} onChange={(e) => setCard((c) => ({ ...c, number: e.target.value.replace(/\D/g, '').slice(0, 16).replace(/(.{4})/g, '$1 ').trim() }))} error={errors.cardNumber} icon={<CreditCard className="h-4 w-4" />} />
-                    <Input label="Expiry" placeholder="MM/YY" value={card.expiry} onChange={(e) => setCard((c) => ({ ...c, expiry: e.target.value.replace(/\D/g, '').slice(0, 4).replace(/(\d{2})(\d{1,2})/, '$1/$2') }))} error={errors.expiry} />
-                    <Input label="CVV" type="password" placeholder="•••" value={card.cvv} onChange={(e) => setCard((c) => ({ ...c, cvv: e.target.value.replace(/\D/g, '').slice(0, 4) }))} error={errors.cvv} />
-                    <Input containerClassName="sm:col-span-2" label="Name on card" value={card.name} onChange={(e) => setCard((c) => ({ ...c, name: e.target.value }))} />
-                    <p className="sm:col-span-2 flex items-center gap-1.5 text-[10px] text-ink-400"><ShieldCheck className="h-3 w-3 text-emerald-500" /> Card details are tokenised by our PCI-DSS gateway. Servora never stores them.</p>
                   </div>
                 )}
 
@@ -629,7 +689,13 @@ export default function BookingFlowPage() {
               </Button>
             ) : (
               <Button size="lg" className="sm:ml-auto" loading={submitting} onClick={confirmBooking} iconRight={!submitting ? <ShieldCheck className="h-4 w-4" /> : undefined}>
-                {submitting ? 'Confirming…' : `Pay ${inr(pricing.total)} & confirm`}
+                {submitting
+                  ? method === 'upi' || method === 'card'
+                    ? 'Opening Razorpay…'
+                    : 'Confirming…'
+                  : method === 'cash'
+                    ? 'Confirm booking'
+                    : `Pay ${inr(pricing.total)} & confirm`}
               </Button>
             )}
           </div>

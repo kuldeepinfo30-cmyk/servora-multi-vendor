@@ -42,6 +42,7 @@ const publicNav = [
   { label: 'Vendors', to: '/vendors' },
   { label: 'Categories', to: '/categories' },
   { label: 'Offers', to: '/offers' },
+  { label: 'About us', to: '/about' },
   { label: 'How it works', to: '/how-it-works' },
 ];
 

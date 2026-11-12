@@ -154,6 +154,11 @@ export interface Booking {
   participants?: number;
   createdAt: string;
   refundAmount?: number;
+  /** Razorpay payment id when the booking was paid online. */
+  paymentRef?: string;
+  /** True when the server verified the Razorpay signature. */
+  paymentVerified?: boolean;
+  gateway?: 'razorpay' | 'wallet' | 'cash';
 }
 
 export interface Review {

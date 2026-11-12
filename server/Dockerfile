@@ -20,4 +20,6 @@ COPY --from=build /app/prisma ./prisma
 COPY package.json ./
 USER nestjs
 EXPOSE 4000
-CMD ["node", "dist/main.js"]
+# Apply pending migrations on boot, then start the API. Safe to run on every
+# deploy: `migrate deploy` is a no-op when the schema is already current.
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/main.js"]

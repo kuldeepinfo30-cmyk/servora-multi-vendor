@@ -272,9 +272,21 @@ export default function BookingDetailPage() {
                 <span className="font-display text-[15px] font-extrabold text-ink-900">{inr(booking.amount)}</span>
               </div>
             </div>
-            <div className="mt-2 flex items-center justify-between">
-              <p className="text-[10.5px] text-ink-400">Paid via {booking.paymentMethod}</p>
-              <button onClick={() => setInvoiceOpen(true)} className="text-[11px] font-bold text-brand-700 hover:text-brand-800">View tax invoice →</button>
+            <div className="mt-2 flex items-center justify-between gap-3">
+              <p className="text-[10.5px] text-ink-400">
+                Paid via {booking.paymentMethod}
+                {booking.paymentRef && (
+                  <span className="mt-0.5 block font-mono text-[9.5px] text-ink-400">{booking.paymentRef}</span>
+                )}
+              </p>
+              <div className="flex items-center gap-2">
+                {booking.paymentVerified && (
+                  <Badge tone="success" size="sm" icon={<ShieldCheck className="h-3 w-3" />}>
+                    Razorpay verified
+                  </Badge>
+                )}
+                <button onClick={() => setInvoiceOpen(true)} className="text-[11px] font-bold text-brand-700 hover:text-brand-800">View tax invoice →</button>
+              </div>
             </div>
           </SectionCard>
 
