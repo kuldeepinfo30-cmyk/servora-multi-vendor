@@ -11,7 +11,7 @@ services:
     runtime: docker
     rootDir: server
     dockerfilePath: ./Dockerfile
-    plan: starter
+    plan: free
     healthCheckPath: /health
     autoDeploy: true
     envVars:
@@ -70,7 +70,7 @@ services:
   
   - type: keyvalue
     name: servora-redis
-    plan: starter
+    plan: free
     maxmemoryPolicy: noeviction
     ipAllowList: []
 
@@ -78,4 +78,4 @@ databases:
   - name: servora-postgres
     databaseName: servora
     user: servora
-    plan: basic-256mb
+    plan: free
