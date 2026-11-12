@@ -46,12 +46,6 @@ npm run dev
 
 It opens on http://localhost:5173.
 
-Log in with any of these, password is `demo1234` for all three:
-
-- `customer@servora.demo`
-- `vendor@servora.demo`
-- `admin@servora.demo`
-
 Two things worth trying while you're in there:
 
 - **The theme button in the header.** Three themes: light green (default, the one I actually use), white,
@@ -103,9 +97,9 @@ The flow is the real one — no amount is trusted from the browser in the verifi
 Credentials live in `server/.env`, never in the front end:
 
 ```env
-RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxxx
-RAZORPAY_KEY_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
-RAZORPAY_WEBHOOK_SECRET=xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+RAZORPAY_KEY_ID=rzp_test_xx
+RAZORPAY_KEY_SECRET=xx
+RAZORPAY_WEBHOOK_SECRET=xxx
 RAZORPAY_CURRENCY=INR
 ```
 
@@ -113,7 +107,7 @@ The front end only needs the publishable key id:
 
 ```env
 VITE_API_URL=http://localhost:4000
-VITE_RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxxxx
+VITE_RAZORPAY_KEY_ID=rzp_test_xx
 ```
 
 For webhooks, open **Razorpay Dashboard → Settings → Webhooks** and add:
