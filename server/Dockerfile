@@ -22,4 +22,6 @@ USER nestjs
 EXPOSE 4000
 # Apply pending migrations on boot, then start the API. Safe to run on every
 # deploy: `migrate deploy` is a no-op when the schema is already current.
-CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && node dist/main.js"]
+
+CMD ["sh", "-c", "node_modules/.bin/prisma migrate deploy && MAIN=$(find dist -type f -name main.js -print -quit) && if [ -z \"$MAIN\" ]; then echo 'ERROR: main.js not found in dist'; find dist -maxdepth 4 -type f; exit 1; fi && echo \"Starting NestJS from $MAIN\" && exec node \"$MAIN\""]
+
