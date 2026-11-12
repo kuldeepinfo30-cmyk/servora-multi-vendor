@@ -67,10 +67,12 @@ services:
       - key: DEMO_PASSWORD
         sync: false
 
+  
   - type: keyvalue
     name: servora-redis
     plan: starter
     maxmemoryPolicy: noeviction
+    ipAllowList: []
 
 databases:
   - name: servora-postgres
